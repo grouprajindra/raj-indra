@@ -1532,6 +1532,296 @@ body {
     .data-table th, .data-table td { padding:8px 10px; font-size:0.75rem; }
 }
 
+/* ============ SETTINGS PAGE ============ */
+.settings-card {
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:var(--radius-lg);
+    margin-bottom:16px;
+    overflow:hidden;
+    transition:border-color var(--transition);
+}
+.settings-card:hover {
+    border-color:var(--border-light);
+}
+
+.settings-card-header {
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:18px 22px;
+    border-bottom:1px solid var(--border);
+    background:var(--bg-glass);
+}
+
+.settings-card-icon {
+    width:42px;
+    height:42px;
+    border-radius:var(--radius);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:1.3rem;
+    flex-shrink:0;
+}
+
+.settings-card-header h3 {
+    font-size:0.95rem;
+    font-weight:600;
+    color:var(--text-primary);
+    margin-bottom:2px;
+}
+
+.settings-card-header p {
+    font-size:0.78rem;
+    color:var(--text-muted);
+}
+
+.settings-card-body {
+    padding:20px 22px;
+}
+
+.settings-actions {
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:12px;
+}
+
+/* Sync Status Panel */
+.sync-status-panel {
+    margin-top:16px;
+    background:var(--bg-glass);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px 16px;
+}
+
+.sync-status-row {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:6px 0;
+}
+
+.sync-status-row:not(:last-child) {
+    border-bottom:1px solid rgba(255,255,255,0.04);
+}
+
+.sync-label {
+    font-size:0.8rem;
+    color:var(--text-muted);
+    font-weight:500;
+}
+
+.sync-value {
+    font-size:0.8rem;
+    color:var(--text-secondary);
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+
+.status-dot {
+    display:inline-block;
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    flex-shrink:0;
+}
+
+.status-dot.connected {
+    background:#10B981;
+    box-shadow:0 0 6px rgba(16,185,129,0.5);
+}
+
+.status-dot.disconnected {
+    background:var(--text-muted);
+}
+
+.status-dot.error {
+    background:#EF4444;
+    box-shadow:0 0 6px rgba(239,68,68,0.5);
+}
+
+.sheets-link-panel {
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px solid var(--border);
+}
+
+/* Email Info Box */
+.email-info-box {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+}
+
+.email-info-item {
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    background:var(--bg-glass);
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    font-size:0.8rem;
+    color:var(--text-secondary);
+}
+
+.email-info-icon {
+    color:#10B981;
+    font-weight:700;
+    font-size:0.85rem;
+    flex-shrink:0;
+}
+
+/* Email Log */
+.email-log-list {
+    margin-top:10px;
+    max-height:300px;
+    overflow-y:auto;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+}
+
+.email-log-item {
+    padding:12px 14px;
+    border-bottom:1px solid rgba(255,255,255,0.04);
+    transition:background var(--transition);
+}
+
+.email-log-item:hover {
+    background:var(--bg-glass);
+}
+
+.email-log-item:last-child {
+    border-bottom:none;
+}
+
+.email-log-top {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:4px;
+}
+
+.email-log-to {
+    font-size:0.82rem;
+    font-weight:600;
+    color:var(--text-primary);
+}
+
+.email-log-time {
+    font-size:0.72rem;
+    color:var(--text-muted);
+}
+
+.email-log-subject {
+    font-size:0.8rem;
+    color:var(--text-secondary);
+    margin-bottom:2px;
+}
+
+.email-log-addr {
+    font-size:0.72rem;
+    color:var(--text-muted);
+    font-family:'Courier New', monospace;
+}
+
+/* Export Grid */
+.export-grid {
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:8px;
+}
+
+.export-btn {
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+    padding:16px 10px;
+    background:var(--bg-glass);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    cursor:pointer;
+    transition:all var(--transition);
+    color:var(--text-secondary);
+    font-family:inherit;
+}
+
+.export-btn:hover {
+    background:var(--bg-glass-2);
+    border-color:var(--border-light);
+    color:var(--text-primary);
+    transform:translateY(-1px);
+}
+
+.export-icon {
+    font-size:1.5rem;
+}
+
+.export-label {
+    font-size:0.75rem;
+    font-weight:500;
+}
+
+/* Setup Steps */
+.setup-steps {
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+}
+
+.setup-step {
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+    padding:10px 14px;
+    background:var(--bg-glass);
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    font-size:0.82rem;
+    color:var(--text-secondary);
+    line-height:1.5;
+}
+
+.step-num {
+    width:24px;
+    height:24px;
+    background:var(--accent-gradient);
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:0.72rem;
+    font-weight:700;
+    color:white;
+    flex-shrink:0;
+}
+
+@media(max-width:768px) {
+    .email-info-box {
+        grid-template-columns:1fr;
+    }
+    .export-grid {
+        grid-template-columns:repeat(2, 1fr);
+    }
+    .settings-card-header {
+        padding:14px 16px;
+    }
+    .settings-card-body {
+        padding:16px;
+    }
+}
+
+@media(max-width:480px) {
+    .export-grid {
+        grid-template-columns:1fr 1fr;
+    }
+}
+
 /* ============ PRINT STYLES ============ */
 @media print {
     body { background:white !important; overflow:visible !important; }
