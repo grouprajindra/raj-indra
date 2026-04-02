@@ -144,24 +144,131 @@
 
             <!-- SETTINGS -->
             <div class="page-section" id="sec-settings">
-                <div class="page-title"><div><h1>Settings</h1><p>Configure Google Sheets sync and other settings</p></div></div>
-                <div class="sheets-config-card">
-                    <h3>📊 Google Sheets Integration</h3>
-                    <p>Connect your Google Sheets to backup all data automatically. Data will sync to your sheet when employees register, leads are created, etc.</p>
-                    <div class="form-group"><label>Google Apps Script Web App URL</label><input class="form-input" id="sheets-url" placeholder="https://script.google.com/macros/s/..."></div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-                        <button class="btn btn-sm btn-success" onclick="saveSheetsUrl()">💾 Save URL</button>
-                        <button class="btn btn-sm btn-primary" onclick="syncAllData()">🔄 Sync All Data Now</button>
+                <div class="page-title"><div><h1>Settings</h1><p>Configure Google Sheets sync, email automation & data management</p></div></div>
+                
+                <!-- Google Sheets Integration -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <div class="settings-card-icon" style="background:rgba(16,185,129,0.12);color:#10B981">📊</div>
+                        <div><h3>Google Sheets Integration</h3><p>Auto-sync all data to Google Sheets in real-time</p></div>
                     </div>
-                    <div class="sheets-status" id="sheets-status"></div>
+                    <div class="settings-card-body">
+                        <div class="form-group"><label>Google Apps Script Web App URL</label><input class="form-input" id="sheets-url" placeholder="https://script.google.com/macros/s/..."></div>
+                        <div class="settings-actions">
+                            <button class="btn btn-sm btn-success" onclick="saveSheetsUrl()">💾 Save URL</button>
+                            <button class="btn btn-sm btn-primary" onclick="testSheetsConnection()" id="btn-test-conn">🔌 Test Connection</button>
+                            <button class="btn btn-sm btn-warning" onclick="syncAllData()" id="btn-sync-all">🔄 Sync All Data</button>
+                        </div>
+                        <div class="sync-status-panel" id="sync-status-panel">
+                            <div class="sync-status-row">
+                                <span class="sync-label">Connection:</span>
+                                <span class="sync-value" id="sync-conn-status"><span class="status-dot disconnected"></span> Not configured</span>
+                            </div>
+                            <div class="sync-status-row">
+                                <span class="sync-label">Last Sync:</span>
+                                <span class="sync-value" id="sync-last-time">Never</span>
+                            </div>
+                            <div class="sync-status-row">
+                                <span class="sync-label">Auto-Sync:</span>
+                                <span class="sync-value" id="sync-auto-status">Active (2s debounce)</span>
+                            </div>
+                            <div class="sync-status-row">
+                                <span class="sync-label">Pending Queue:</span>
+                                <span class="sync-value" id="sync-queue-count">0 items</span>
+                            </div>
+                        </div>
+                        <div class="sheets-link-panel" id="sheets-link-panel" style="display:none">
+                            <a href="#" target="_blank" id="sheets-link" class="btn btn-sm btn-outline">📄 Open Google Sheet</a>
+                        </div>
+                    </div>
                 </div>
-                <div class="card">
-                    <h3 style="margin-bottom:12px;font-size:0.95rem">⚠️ Data Management</h3>
-                    <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:14px">Export all data as backup or reset the system</p>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap">
-                        <button class="btn btn-sm btn-outline" onclick="DB.exportJSON(DB.USERS,'employees_backup.json')">⬇ Employees JSON</button>
-                        <button class="btn btn-sm btn-outline" onclick="DB.exportJSON(DB.LEADS,'leads_backup.json')">⬇ Leads JSON</button>
-                        <button class="btn btn-sm btn-outline" onclick="DB.exportJSON(DB.INVOICES,'invoices_backup.json')">⬇ Invoices JSON</button>
+
+                <!-- Email Automation -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <div class="settings-card-icon" style="background:rgba(59,130,246,0.12);color:#3B82F6">📧</div>
+                        <div><h3>Email Automation</h3><p>Real emails are sent via Google Apps Script when a URL is configured</p></div>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="email-info-box">
+                            <div class="email-info-item">
+                                <span class="email-info-icon">✓</span>
+                                <span>Registration approval/rejection emails</span>
+                            </div>
+                            <div class="email-info-item">
+                                <span class="email-info-icon">✓</span>
+                                <span>Lead assignment & status update emails</span>
+                            </div>
+                            <div class="email-info-item">
+                                <span class="email-info-icon">✓</span>
+                                <span>Invoice approval notification emails</span>
+                            </div>
+                            <div class="email-info-item">
+                                <span class="email-info-icon">✓</span>
+                                <span>Profile update approval emails</span>
+                            </div>
+                        </div>
+                        <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
+                            <h4 style="font-size:0.88rem;color:var(--text-secondary)">📋 Email Log</h4>
+                            <span style="font-size:0.75rem;color:var(--text-muted)" id="email-log-count">0 emails</span>
+                        </div>
+                        <div class="email-log-list" id="email-log-list">
+                            <div class="empty-state" style="padding:20px"><h3>No emails sent yet</h3></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Management -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <div class="settings-card-icon" style="background:rgba(245,158,11,0.12);color:#F59E0B">💾</div>
+                        <div><h3>Data Management</h3><p>Export all data as backup files</p></div>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="export-grid">
+                            <button class="export-btn" onclick="DB.exportCSV(DB.USERS,'employees_export.csv')">
+                                <span class="export-icon">👥</span>
+                                <span class="export-label">Employees CSV</span>
+                            </button>
+                            <button class="export-btn" onclick="DB.exportCSV(DB.LEADS,'leads_export.csv')">
+                                <span class="export-icon">📋</span>
+                                <span class="export-label">Leads CSV</span>
+                            </button>
+                            <button class="export-btn" onclick="DB.exportCSV(DB.INVOICES,'invoices_export.csv')">
+                                <span class="export-icon">📄</span>
+                                <span class="export-label">Invoices CSV</span>
+                            </button>
+                            <button class="export-btn" onclick="DB.exportJSON(DB.USERS,'employees_backup.json')">
+                                <span class="export-icon">📦</span>
+                                <span class="export-label">Employees JSON</span>
+                            </button>
+                            <button class="export-btn" onclick="DB.exportJSON(DB.LEADS,'leads_backup.json')">
+                                <span class="export-icon">📦</span>
+                                <span class="export-label">Leads JSON</span>
+                            </button>
+                            <button class="export-btn" onclick="DB.exportJSON(DB.INVOICES,'invoices_backup.json')">
+                                <span class="export-icon">📦</span>
+                                <span class="export-label">Invoices JSON</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Setup Guide -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <div class="settings-card-icon" style="background:rgba(99,102,241,0.12);color:#6366F1">📖</div>
+                        <div><h3>Setup Guide</h3><p>How to connect Google Sheets & Email</p></div>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="setup-steps">
+                            <div class="setup-step"><span class="step-num">1</span><span>Go to <a href="https://script.google.com" target="_blank" style="color:var(--accent-blue)">script.google.com</a> and create a new project</span></div>
+                            <div class="setup-step"><span class="step-num">2</span><span>Copy the code from <strong>google-apps-script.js</strong> file and paste it</span></div>
+                            <div class="setup-step"><span class="step-num">3</span><span>Click <strong>Deploy → New Deployment → Web App</strong></span></div>
+                            <div class="setup-step"><span class="step-num">4</span><span>Set "Execute as" = <strong>Me</strong>, "Who has access" = <strong>Anyone</strong></span></div>
+                            <div class="setup-step"><span class="step-num">5</span><span>Copy the deployment URL and paste it above</span></div>
+                            <div class="setup-step"><span class="step-num">6</span><span>Click <strong>Test Connection</strong> to verify it works</span></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -196,7 +303,7 @@ document.getElementById('admin-avatar').textContent = adminUser.name.split(' ').
 
 // Load sheets URL
 var sheetsUrlEl = document.getElementById('sheets-url');
-if (sheetsUrlEl) { sheetsUrlEl.value = DB.getSheetsUrl() || ''; updateSheetsStatus(); }
+if (sheetsUrlEl) { sheetsUrlEl.value = DB.getSheetsUrl() || ''; }
 
 function openSidebar() { document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebar-overlay').classList.add('active'); }
 function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebar-overlay').classList.remove('active'); }
@@ -223,28 +330,83 @@ function refreshPage(page) {
     if (page === 'leads') renderLeads();
     if (page === 'finance') renderFinance();
     if (page === 'approvals') renderApprovals();
-    if (page === 'settings') { sheetsUrlEl.value = DB.getSheetsUrl()||''; updateSheetsStatus(); }
+    if (page === 'settings') { sheetsUrlEl.value = DB.getSheetsUrl()||''; updateSyncStatus(); renderEmailLog(); }
 }
 
-// ===== SHEETS CONFIG =====
+// ===== SHEETS & EMAIL CONFIG =====
 function saveSheetsUrl() {
     var url = document.getElementById('sheets-url').value.trim();
     DB.setSheetsUrl(url);
-    updateSheetsStatus();
+    updateSyncStatus();
     showToast(url ? 'Google Sheets URL saved!' : 'Google Sheets URL cleared', 'success');
 }
-async function syncAllData() {
-    showToast('Syncing all data...', 'info');
-    var result = await DB.syncAllToSheets();
-    showToast(result.message, result.success ? 'success' : 'error');
-}
-function updateSheetsStatus() {
-    var el = document.getElementById('sheets-status');
-    if (DB.getSheetsUrl()) {
-        el.className = 'sheets-status connected'; el.innerHTML = '● Connected';
+
+async function testSheetsConnection() {
+    var btn = document.getElementById('btn-test-conn');
+    btn.disabled = true; btn.textContent = '⏳ Testing...';
+    var result = await DB.testConnection();
+    btn.disabled = false; btn.textContent = '🔌 Test Connection';
+    if (result.success) {
+        showToast('✅ ' + result.message, 'success');
+        var connEl = document.getElementById('sync-conn-status');
+        connEl.innerHTML = '<span class="status-dot connected"></span> Connected';
+        if (result.sheetUrl) {
+            document.getElementById('sheets-link-panel').style.display = 'block';
+            document.getElementById('sheets-link').href = result.sheetUrl;
+        }
     } else {
-        el.className = 'sheets-status disconnected'; el.innerHTML = '○ Not connected';
+        showToast('❌ ' + result.message, 'error');
+        document.getElementById('sync-conn-status').innerHTML = '<span class="status-dot error"></span> Failed';
     }
+}
+
+async function syncAllData() {
+    var btn = document.getElementById('btn-sync-all');
+    btn.disabled = true; btn.textContent = '⏳ Syncing...';
+    showToast('Syncing all data to Google Sheets...', 'info');
+    var result = await DB.syncAllToSheets();
+    btn.disabled = false; btn.textContent = '🔄 Sync All Data';
+    if (result.success) {
+        showToast('✅ ' + result.message, 'success');
+        localStorage.setItem('rig_last_sync', new Date().toISOString());
+        updateSyncStatus();
+    } else {
+        showToast('❌ ' + result.message, 'error');
+    }
+}
+
+function updateSyncStatus() {
+    var url = DB.getSheetsUrl();
+    var connEl = document.getElementById('sync-conn-status');
+    if (url) {
+        connEl.innerHTML = '<span class="status-dot connected"></span> URL configured';
+    } else {
+        connEl.innerHTML = '<span class="status-dot disconnected"></span> Not configured';
+    }
+    var lastSync = localStorage.getItem('rig_last_sync');
+    document.getElementById('sync-last-time').textContent = lastSync ? timeAgo(lastSync) + ' (' + new Date(lastSync).toLocaleString() + ')' : 'Never';
+    var queueCount = JSON.parse(localStorage.getItem('rig_sync_queue') || '[]').length;
+    document.getElementById('sync-queue-count').textContent = queueCount + ' items' + (queueCount > 0 ? ' (will retry)' : '');
+}
+
+function renderEmailLog() {
+    var emails = DB.getEmailLog();
+    var container = document.getElementById('email-log-list');
+    document.getElementById('email-log-count').textContent = emails.length + ' emails';
+    if (!emails.length) {
+        container.innerHTML = '<div class="empty-state" style="padding:20px"><h3>No emails sent yet</h3><p style="font-size:0.78rem;color:var(--text-muted);margin-top:4px">Emails will appear here when triggered by actions like approvals, lead assignments, etc.</p></div>';
+        return;
+    }
+    container.innerHTML = emails.slice(0, 20).map(function(e) {
+        return '<div class="email-log-item">' +
+            '<div class="email-log-top">' +
+                '<span class="email-log-to">📧 ' + (e.toName || e.to) + '</span>' +
+                '<span class="email-log-time">' + timeAgo(e.sentAt) + '</span>' +
+            '</div>' +
+            '<div class="email-log-subject">' + e.subject + '</div>' +
+            '<div class="email-log-addr">' + e.to + '</div>' +
+        '</div>';
+    }).join('');
 }
 
 // ===== DASHBOARD =====
@@ -590,6 +752,8 @@ function timeAgo(d) {
 
 // INIT
 renderDashboard(); updateApprovalBadge(); updateNotifBadge();
+// Initialize sync status on load
+try { updateSyncStatus(); } catch(e) {}
 </script>
 </body>
 </html>
