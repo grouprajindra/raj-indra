@@ -1,6 +1,7 @@
 /* ========================================
-   Raj Indra Group — Database Layer v2.0
-   LocalStorage + Google Sheets Integration
+   Raj Indra Group — Database Layer v3.0
+   LocalStorage + Google Sheets Auto-Sync
+   + Real Email via Google Apps Script
    ======================================== */
 
 const DB = {
@@ -16,6 +17,10 @@ const DB = {
 
     // Google Sheets Config
     SHEETS_URL: '', // Will be set from config
+
+    // Sync queue for offline resilience
+    _syncQueue: [],
+    _isSyncing: false,
 
     // Initialize with default admin
     init() {
@@ -52,6 +57,12 @@ const DB = {
         // Load Google Sheets URL from config
         const config = JSON.parse(localStorage.getItem(this.CONFIG) || '{}');
         this.SHEETS_URL = config.sheetsUrl || '';
+
+        // Process any pending sync queue
+        this._loadSyncQueue();
+        if (this._syncQueue.length > 0) {
+            this._processSyncQueue();
+        }
     },
 
     // ===== Google Sheets Integration =====
@@ -66,47 +77,172 @@ const DB = {
         return this.SHEETS_URL;
     },
 
-    // Sync data to Google Sheets (via Apps Script Web App)
-    async syncToSheets(sheetName, data) {
+    // ===== FIXED: Proper fetch for Google Apps Script =====
+    // Google Apps Script redirects on POST, so we must NOT use no-cors
+    // Instead, we use fetch with redirect:'follow' (default behavior)
+    async _postToSheets(data) {
         if (!this.SHEETS_URL) return { success: false, message: 'Google Sheets URL not configured' };
+        
         try {
+            // Google Apps Script deployed web apps redirect (302) on POST
+            // Using text/plain content type avoids CORS preflight
             const response = await fetch(this.SHEETS_URL, {
                 method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'sync', sheet: sheetName, data: data })
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(data),
+                redirect: 'follow'
             });
-            return { success: true, message: 'Synced to Google Sheets' };
+            
+            // Try to parse response
+            try {
+                const result = await response.json();
+                return result;
+            } catch(e) {
+                // If response can't be parsed, but request succeeded
+                if (response.ok || response.status === 0) {
+                    return { success: true, message: 'Data sent to Google Sheets' };
+                }
+                return { success: false, message: 'Unexpected response from Google Sheets' };
+            }
         } catch (err) {
-            console.error('Sheets sync error:', err);
-            return { success: false, message: 'Sync failed: ' + err.message };
+            console.error('Sheets API error:', err);
+            return { success: false, message: 'Network error: ' + err.message };
         }
     },
 
+    // Test connection to Google Sheets
+    async testConnection() {
+        if (!this.SHEETS_URL) return { success: false, message: 'Google Sheets URL not set' };
+        try {
+            const response = await fetch(this.SHEETS_URL, { redirect: 'follow' });
+            const data = await response.json();
+            return { success: true, message: 'Connected! ' + (data.message || ''), sheetUrl: data.sheetUrl || '' };
+        } catch(err) {
+            return { success: false, message: 'Connection failed: ' + err.message };
+        }
+    },
+
+    // Sync data to Google Sheets (single record)
+    async syncToSheets(sheetName, data) {
+        const result = await this._postToSheets({ action: 'sync', sheet: sheetName, data: data });
+        if (!result.success && result.message && result.message.indexOf('Network') > -1) {
+            // Queue for retry
+            this._addToSyncQueue({ action: 'sync', sheet: sheetName, data: data });
+        }
+        return result;
+    },
+
+    // Full sync all data to Google Sheets
     async syncAllToSheets() {
         if (!this.SHEETS_URL) return { success: false, message: 'Google Sheets URL not configured' };
+
+        const allData = {
+            action: 'syncAll',
+            employees: this.getAll(this.USERS).map(u => {
+                const { password, photo, ...safe } = u;
+                return safe;
+            }),
+            leads: this.getAll(this.LEADS),
+            invoices: this.getAll(this.INVOICES),
+            approvals: this.getAll(this.APPROVALS)
+        };
+
+        const result = await this._postToSheets(allData);
+        return result;
+    },
+
+    // ===== Sync Queue (offline resilience) =====
+    _loadSyncQueue() {
         try {
-            const allData = {
-                action: 'syncAll',
-                employees: this.getAll(this.USERS).map(u => {
-                    const { password, ...safe } = u;
-                    return safe;
-                }),
-                leads: this.getAll(this.LEADS),
-                invoices: this.getAll(this.INVOICES),
-                approvals: this.getAll(this.APPROVALS)
-            };
-            await fetch(this.SHEETS_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(allData)
-            });
-            return { success: true, message: 'All data synced to Google Sheets!' };
-        } catch (err) {
-            console.error('Full sync error:', err);
-            return { success: false, message: 'Full sync failed: ' + err.message };
+            this._syncQueue = JSON.parse(localStorage.getItem('rig_sync_queue') || '[]');
+        } catch(e) {
+            this._syncQueue = [];
         }
+    },
+
+    _saveSyncQueue() {
+        localStorage.setItem('rig_sync_queue', JSON.stringify(this._syncQueue));
+    },
+
+    _addToSyncQueue(data) {
+        this._syncQueue.push({ data: data, timestamp: Date.now() });
+        this._saveSyncQueue();
+    },
+
+    async _processSyncQueue() {
+        if (this._isSyncing || !this.SHEETS_URL || this._syncQueue.length === 0) return;
+        this._isSyncing = true;
+
+        const failedItems = [];
+        for (const item of this._syncQueue) {
+            const result = await this._postToSheets(item.data);
+            if (!result.success) {
+                // Keep failed items for retry, but only if less than 24 hours old
+                if (Date.now() - item.timestamp < 86400000) {
+                    failedItems.push(item);
+                }
+            }
+        }
+
+        this._syncQueue = failedItems;
+        this._saveSyncQueue();
+        this._isSyncing = false;
+    },
+
+    // ===== Auto-sync trigger after any data change =====
+    _autoSync() {
+        // Debounced auto-sync: waits 2 seconds after last change
+        if (this._autoSyncTimer) clearTimeout(this._autoSyncTimer);
+        this._autoSyncTimer = setTimeout(() => {
+            this.syncAllToSheets().then(result => {
+                if (result.success) {
+                    console.log('✅ Auto-synced to Google Sheets');
+                } else {
+                    console.warn('⚠️ Auto-sync failed:', result.message);
+                }
+            });
+        }, 2000);
+    },
+
+    // ===== REAL EMAIL via Google Apps Script =====
+    async sendEmail(toEmail, toName, subject, body) {
+        if (!this.SHEETS_URL) {
+            // Fallback: store locally
+            this._simulateEmail(toEmail, toName, subject, body);
+            return { success: false, message: 'Email stored locally (Google Sheets URL not configured)' };
+        }
+
+        try {
+            const result = await this._postToSheets({
+                action: 'sendEmail',
+                to: toEmail,
+                toName: toName,
+                subject: subject,
+                body: body
+            });
+
+            // Also log locally
+            this._simulateEmail(toEmail, toName, subject, body);
+
+            return result;
+        } catch(err) {
+            // Fallback to local storage
+            this._simulateEmail(toEmail, toName, subject, body);
+            return { success: false, message: 'Email queued locally: ' + err.message };
+        }
+    },
+
+    // Local email log (always stores for reference)
+    _simulateEmail(toEmail, toName, subject, body) {
+        console.log(`📧 EMAIL to ${toEmail}:\nSubject: ${subject}\nBody: ${body}`);
+        const emailLog = JSON.parse(localStorage.getItem('rig_emails') || '[]');
+        emailLog.push({ to: toEmail, toName: toName, subject, body, sentAt: new Date().toISOString() });
+        localStorage.setItem('rig_emails', JSON.stringify(emailLog));
+    },
+
+    // Get email log
+    getEmailLog() {
+        return JSON.parse(localStorage.getItem('rig_emails') || '[]').sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
     },
 
     // Generate IDs
@@ -119,7 +255,6 @@ const DB = {
     },
 
     nextEmployeeId() {
-        // Generate unique sequential employee ID
         const users = this.getAll(this.USERS);
         const empIds = users
             .filter(u => u.role === 'employee' && u.employeeId)
@@ -132,7 +267,6 @@ const DB = {
     },
 
     // ===== Photo Management =====
-    // Compress and store photo as base64
     async processPhoto(file) {
         return new Promise((resolve, reject) => {
             if (!file) { resolve(''); return; }
@@ -142,7 +276,7 @@ const DB = {
                 const img = new Image();
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    const MAX_SIZE = 300; // Max width/height for compressed photo
+                    const MAX_SIZE = 300;
                     let width = img.width;
                     let height = img.height;
                     
@@ -162,8 +296,6 @@ const DB = {
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, width, height);
-                    
-                    // Convert to JPEG with 70% quality for smaller size
                     const compressed = canvas.toDataURL('image/jpeg', 0.7);
                     resolve(compressed);
                 };
@@ -188,6 +320,7 @@ const DB = {
         const items = this.getAll(key);
         items.push(item);
         localStorage.setItem(key, JSON.stringify(items));
+        this._autoSync(); // Auto-sync on data change
         return item;
     },
 
@@ -197,6 +330,7 @@ const DB = {
         if (idx > -1) {
             items[idx] = { ...items[idx], ...updates, updatedAt: new Date().toISOString() };
             localStorage.setItem(key, JSON.stringify(items));
+            this._autoSync(); // Auto-sync on data change
             return items[idx];
         }
         return null;
@@ -205,6 +339,7 @@ const DB = {
     delete(key, id) {
         const items = this.getAll(key).filter(item => item.id !== id);
         localStorage.setItem(key, JSON.stringify(items));
+        this._autoSync(); // Auto-sync on data change
     },
 
     // Auth
@@ -275,8 +410,14 @@ const DB = {
         // Notify admin
         this.addNotification('USR001', `New registration request from ${data.name}`, 'registration');
 
-        // Auto sync to sheets
-        this.syncToSheets('Employees', user);
+        // Send real email to admin
+        const admin = this.getById(this.USERS, 'USR001');
+        if (admin && admin.email) {
+            this.sendEmail(admin.email, admin.name, 
+                'New Registration Request',
+                `A new associate has requested registration:<br><br><strong>Name:</strong> ${data.name}<br><strong>Email:</strong> ${data.email}<br><strong>Employee ID:</strong> ${employeeId}<br><br>Please review this request in your admin panel.`
+            );
+        }
 
         return { success: true, message: `Registration submitted! Your Employee ID: ${employeeId}. Awaiting admin approval.`, employeeId };
     },
@@ -320,8 +461,16 @@ const DB = {
             this.addNotification('USR001', `${user?.name} added a new lead: ${data.clientName}`, 'lead');
         }
 
-        // Auto sync to sheets
-        this.syncToSheets('Leads', lead);
+        // Send email to assigned employee
+        if (data.assignedTo) {
+            const assignee = this.getById(this.USERS, data.assignedTo);
+            if (assignee && assignee.email) {
+                this.sendEmail(assignee.email, assignee.name,
+                    'New Lead Assigned',
+                    `A new lead has been assigned to you:<br><br><strong>Client:</strong> ${data.clientName}<br><strong>Service:</strong> ${data.service}<br><strong>Charges:</strong> ₹${lead.charges.toLocaleString()}<br><strong>Payout:</strong> ₹${lead.payout.toLocaleString()}<br><br>Please check your dashboard for more details.`
+                );
+            }
+        }
 
         return lead;
     },
@@ -349,7 +498,13 @@ const DB = {
             this.update(this.LEADS, leadId, { status });
             if (lead.assignedTo) {
                 this.addNotification(lead.assignedTo, `Lead "${lead.clientName}" status updated to ${status}`, 'lead');
-                this.simulateEmail(lead.assignedTo, `Lead Update: ${lead.clientName}`, `The status of lead "${lead.clientName}" has been updated to "${status}" by admin.`);
+                const assignee = this.getById(this.USERS, lead.assignedTo);
+                if (assignee && assignee.email) {
+                    this.sendEmail(assignee.email, assignee.name,
+                        `Lead Update: ${lead.clientName}`,
+                        `The status of lead "<strong>${lead.clientName}</strong>" has been updated to "<strong>${status}</strong>" by admin.`
+                    );
+                }
             }
             return { pending: false, message: 'Status updated successfully' };
         }
@@ -408,10 +563,20 @@ const DB = {
 
         this.update(this.APPROVALS, approvalId, { status: action, processedAt: new Date().toISOString() });
 
+        // Get the user who requested
+        const requestUser = this.getById(this.USERS, approval.requestedBy);
+        const userName = requestUser ? requestUser.name : approval.requestedByName;
+        const userEmail = requestUser ? requestUser.email : null;
+
         if (approval.type === 'registration') {
             this.update(this.USERS, approval.requestedBy, { status: action === 'approved' ? 'approved' : 'rejected' });
             this.addNotification(approval.requestedBy, `Your registration has been ${action}.`, 'registration');
-            this.simulateEmail(approval.requestedBy, `Registration ${action}`, `Dear ${approval.requestedByName}, your registration with Raj Indra Group has been ${action}.`);
+            if (userEmail) {
+                this.sendEmail(userEmail, userName,
+                    `Registration ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+                    `Dear ${userName},<br><br>Your registration with <strong>Raj Indra Group</strong> has been <strong>${action}</strong>.<br><br>${action === 'approved' ? 'You can now login to the employee portal with your registered credentials.' : 'Please contact the admin for further assistance.'}`
+                );
+            }
         } else if (approval.type === 'lead_update') {
             if (action === 'approved' && approval.data.newStatus) {
                 this.update(this.LEADS, approval.data.leadId, { status: approval.data.newStatus, approvalStatus: 'approved' });
@@ -419,19 +584,34 @@ const DB = {
                 this.update(this.LEADS, approval.data.leadId, { approvalStatus: 'approved' });
             }
             this.addNotification(approval.requestedBy, `Your lead update has been ${action}.`, 'lead');
-            this.simulateEmail(approval.requestedBy, `Lead Update ${action}`, `Your lead update request has been ${action} by admin.`);
+            if (userEmail) {
+                this.sendEmail(userEmail, userName,
+                    `Lead Update ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+                    `Your lead update request has been <strong>${action}</strong> by admin.`
+                );
+            }
         } else if (approval.type === 'invoice') {
             if (action === 'approved') {
                 this.update(this.INVOICES, approval.data.invoiceId, { status: 'approved' });
             }
             this.addNotification(approval.requestedBy, `Your invoice has been ${action}.`, 'invoice');
-            this.simulateEmail(approval.requestedBy, `Invoice ${action}`, `Your invoice ${approval.data.invoiceNumber} has been ${action} by admin.`);
+            if (userEmail) {
+                this.sendEmail(userEmail, userName,
+                    `Invoice ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+                    `Your invoice <strong>${approval.data.invoiceNumber || ''}</strong> has been <strong>${action}</strong> by admin.`
+                );
+            }
         } else if (approval.type === 'profile_update') {
             if (action === 'approved') {
                 this.update(this.USERS, approval.requestedBy, approval.data.updates);
             }
             this.addNotification(approval.requestedBy, `Your profile update has been ${action}.`, 'profile');
-            this.simulateEmail(approval.requestedBy, `Profile Update ${action}`, `Your profile update request has been ${action} by admin.`);
+            if (userEmail) {
+                this.sendEmail(userEmail, userName,
+                    `Profile Update ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+                    `Your profile update request has been <strong>${action}</strong> by admin.`
+                );
+            }
         }
     },
 
@@ -463,14 +643,12 @@ const DB = {
         return this.getNotifications(userId).filter(n => !n.read).length;
     },
 
-    // Email Simulation
+    // Legacy email simulation (kept for backward compatibility)
     simulateEmail(userId, subject, body) {
         const user = this.getById(this.USERS, userId);
         if (!user) return;
-        console.log(`📧 EMAIL SENT to ${user.email}:\nSubject: ${subject}\nBody: ${body}`);
-        const emailLog = JSON.parse(localStorage.getItem('rig_emails') || '[]');
-        emailLog.push({ to: user.email, toName: user.name, subject, body, sentAt: new Date().toISOString() });
-        localStorage.setItem('rig_emails', JSON.stringify(emailLog));
+        // Now sends real email if Google Sheets URL is configured
+        this.sendEmail(user.email, user.name, subject, body);
     },
 
     // Financial calculations
@@ -492,7 +670,6 @@ const DB = {
     exportCSV(key, filename) {
         const data = this.getAll(key);
         if (!data.length) return;
-        // Filter out photo data from exports (too large)
         const headers = Object.keys(data[0]).filter(h => h !== 'photo' && h !== 'password');
         const csv = [headers.join(','), ...data.map(row => headers.map(h => `"${(row[h] || '').toString().replace(/"/g, '""')}"`).join(','))].join('\n');
         const blob = new Blob([csv], { type: 'text/csv' });
