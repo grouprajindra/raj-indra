@@ -124,7 +124,7 @@
 
             <!-- LEADS -->
             <div class="page-section" id="sec-leads">
-                <div class="page-title"><div><h1>My Leads</h1><p>Leads assigned to you. Status updates need admin approval.</p></div>
+                <div class="page-title"><div><h1>My Leads</h1><p>Leads assigned to you. Update status as work progresses.</p></div>
                 <div class="actions"><button class="btn btn-sm btn-primary" onclick="openAddLeadModal()">+ Add Lead</button></div></div>
                 <div class="tab-group" id="lead-tabs">
                     <button class="tab-btn active" data-f="all" onclick="setLeadTab(this)">All</button>
@@ -133,7 +133,7 @@
                     <button class="tab-btn" data-f="successful" onclick="setLeadTab(this)">Successful</button>
                     <button class="tab-btn" data-f="denied" onclick="setLeadTab(this)">Denied</button>
                 </div>
-                <div class="table-card"><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Client</th><th>Service</th><th>Charges (₹)</th><th>Payout (₹)</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody id="e-lead-tbody"></tbody></table></div></div>
+                <div class="table-card"><div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Client</th><th>Service</th><th>Payout (₹)</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody id="e-lead-tbody"></tbody></table></div></div>
             </div>
 
             <!-- FINANCE -->
@@ -362,15 +362,15 @@ function renderLeads() {
     document.getElementById('e-lead-tbody').innerHTML = leads.length ? leads.map(function(l) {
         return '<tr>' +
             '<td><strong>' + l.clientName + '</strong><br><span style="font-size:0.73rem;color:var(--text-muted)">' + (l.clientEmail||l.clientPhone||'') + '</span></td>' +
-            '<td>' + l.service + '</td><td>₹' + l.charges.toLocaleString() + '</td><td style="color:var(--success)">₹' + l.payout.toLocaleString() + '</td>' +
-            '<td><span class="badge ' + (badgeMap[l.status]||'badge-muted') + '">' + l.status + '</span>' + (l.approvalStatus==='pending'?'<br><span style="font-size:0.68rem;color:var(--warning)">⏳ Awaiting</span>':'') + '</td>' +
+            '<td>' + l.service + '</td><td style="color:var(--success)">₹' + l.payout.toLocaleString() + '</td>' +
+            '<td><span class="badge ' + (badgeMap[l.status]||'badge-muted') + '">' + l.status + '</span></td>' +
             '<td style="font-size:0.78rem;color:var(--text-muted)">' + new Date(l.createdAt).toLocaleDateString() + '</td>' +
             '<td><div class="action-btns">' +
                 '<button class="action-btn" title="Mark Successful" onclick="updateLeadSt(\'' + l.id + '\',\'successful\')">✅</button>' +
                 '<button class="action-btn" title="Mark Denied" onclick="updateLeadSt(\'' + l.id + '\',\'denied\')">❌</button>' +
                 '<button class="action-btn" title="In Progress" onclick="updateLeadSt(\'' + l.id + '\',\'in-progress\')">🔄</button>' +
             '</div></td></tr>';
-    }).join('') : '<tr><td colspan="7" class="empty-state">No leads assigned</td></tr>';
+    }).join('') : '<tr><td colspan="6" class="empty-state">No leads assigned</td></tr>';
 }
 
 function updateLeadSt(leadId, status) {
@@ -389,8 +389,7 @@ function openAddLeadModal() {
         '<div class="form-group"><label>Service *</label><select class="form-select" id="f-el-service">' +
             '<option value="">Select</option><option>ITR Filing</option><option>GST Registration</option><option>GST Return</option><option>Company Registration</option><option>Trademark</option><option>Payroll Management</option><option>Accounting</option><option>Recruitment</option><option>Staffing</option><option>Other</option>' +
         '</select></div></div>' +
-        '<div class="form-row"><div class="form-group"><label>Charges (₹)</label><input type="number" class="form-input" id="f-el-charges" inputmode="numeric"></div>' +
-        '<div class="form-group"><label>Expected Payout (₹)</label><input type="number" class="form-input" id="f-el-payout" inputmode="numeric"></div></div>' +
+        '<div class="form-group"><label>Expected Payout (₹)</label><input type="number" class="form-input" id="f-el-payout" inputmode="numeric"></div>' +
         '<div class="form-group"><label>Notes</label><input class="form-input" id="f-el-notes"></div>';
     document.getElementById('modal-footer').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveNewLead()">Submit for Approval</button>';
     openModal();
@@ -401,7 +400,7 @@ function saveNewLead() {
     var service = document.getElementById('f-el-service').value;
     if (!clientName || !service) { showToast('Client name & service required','error'); return; }
     DB.createLead({ clientName:clientName, clientPhone:document.getElementById('f-el-phone').value, clientEmail:document.getElementById('f-el-email').value,
-        service:service, charges:document.getElementById('f-el-charges').value||0, payout:document.getElementById('f-el-payout').value||0,
+        service:service, charges:0, payout:document.getElementById('f-el-payout').value||0,
         assignedTo:empUser.id, assignedToName:empUser.name, notes:document.getElementById('f-el-notes').value, createdBy:empUser.id });
     closeModal(); renderLeads(); showToast('Lead submitted for admin approval','success');
 }
@@ -415,8 +414,7 @@ function renderFinance() {
     document.getElementById('e-fin-metrics').innerHTML =
         '<div class="metric-card"><div class="label">Total Earnings</div><div class="value" style="color:#10B981">₹' + fin.totalPayout.toLocaleString() + '</div><div class="sub">From ' + fin.successful + ' successful leads</div></div>' +
         '<div class="metric-card"><div class="label">Pending Earnings</div><div class="value" style="color:#F59E0B">₹' + DB.getAll(DB.LEADS).filter(function(l){return l.assignedTo===empUser.id&&(l.status==='pending'||l.status==='in-progress')}).reduce(function(s,l){return s+l.payout},0).toLocaleString() + '</div></div>' +
-        '<div class="metric-card"><div class="label">Invoiced</div><div class="value">₹' + totalPaid.toLocaleString() + '</div><div class="sub">' + invoices.length + ' invoices</div></div>' +
-        '<div class="metric-card"><div class="label">Revenue Generated</div><div class="value" style="color:#3B82F6">₹' + fin.totalRevenue.toLocaleString() + '</div><div class="sub">For the company</div></div>';
+        '<div class="metric-card"><div class="label">Invoiced</div><div class="value">₹' + totalPaid.toLocaleString() + '</div><div class="sub">' + invoices.length + ' invoices</div></div>';
 
     var badgeMap = {pending:'badge-warning',approved:'badge-success',paid:'badge-success'};
     document.getElementById('e-inv-tbody').innerHTML = invoices.length ? invoices.map(function(inv) {
