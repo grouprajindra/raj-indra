@@ -16,7 +16,7 @@ const DB = {
     CONFIG: 'rig_config',
 
     // Google Sheets Config
-    SHEETS_URL: '', // Will be set from config
+    SHEETS_URL: 'https://docs.google.com/spreadsheets/d/11rJ7BRVTy_v11oex5jmEsYb7chmnwiDk9TntFtCocp8/edit', // Will be set from config
 
     // Sync queue for offline resilience
     _syncQueue: [],
@@ -77,48 +77,46 @@ const DB = {
         return this.SHEETS_URL;
     },
 
-    // ===== FIXED: Proper fetch for Google Apps Script =====
-    // Google Apps Script redirects on POST, so we must NOT use no-cors
-    // Instead, we use fetch with redirect:'follow' (default behavior)
+    // ===== Google Apps Script fetch =====
+    // Google Apps Script redirects (302) on POST. Browsers block this due to CORS.
+    // Solution: mode:'no-cors' sends the data successfully (fire-and-forget).
+    // The data DOES reach Google Sheets, but response is opaque (can't read it).
     async _postToSheets(data) {
         if (!this.SHEETS_URL) return { success: false, message: 'Google Sheets URL not configured' };
         
         try {
-            // Google Apps Script deployed web apps redirect (302) on POST
-            // Using text/plain content type avoids CORS preflight
-            const response = await fetch(this.SHEETS_URL, {
+            await fetch(this.SHEETS_URL, {
                 method: 'POST',
+                mode: 'no-cors',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(data),
-                redirect: 'follow'
+                body: JSON.stringify(data)
             });
-            
-            // Try to parse response
-            try {
-                const result = await response.json();
-                return result;
-            } catch(e) {
-                // If response can't be parsed, but request succeeded
-                if (response.ok || response.status === 0) {
-                    return { success: true, message: 'Data sent to Google Sheets' };
-                }
-                return { success: false, message: 'Unexpected response from Google Sheets' };
-            }
+            // With no-cors, response is opaque but data IS sent to server
+            return { success: true, message: 'Data sent to Google Sheets' };
         } catch (err) {
             console.error('Sheets API error:', err);
             return { success: false, message: 'Network error: ' + err.message };
         }
     },
 
-    // Test connection to Google Sheets
+    // Test connection to Google Sheets (GET request works without CORS issues)
     async testConnection() {
         if (!this.SHEETS_URL) return { success: false, message: 'Google Sheets URL not set' };
         try {
+            // GET requests to Google Apps Script follow redirects and return JSON
             const response = await fetch(this.SHEETS_URL, { redirect: 'follow' });
-            const data = await response.json();
-            return { success: true, message: 'Connected! ' + (data.message || ''), sheetUrl: data.sheetUrl || '' };
+            if (response.ok) {
+                try {
+                    const data = await response.json();
+                    return { success: true, message: 'Connected! ' + (data.message || ''), sheetUrl: data.sheetUrl || '' };
+                } catch(e) {
+                    return { success: true, message: 'Connected! (Response received)' };
+                }
+            }
+            return { success: false, message: 'Server returned status ' + response.status };
         } catch(err) {
-            return { success: false, message: 'Connection failed: ' + err.message };
+            // Even if CORS blocks reading response, the URL might still work for POST
+            return { success: false, message: 'Connection test failed: ' + err.message + '. Note: POST sync may still work.' };
         }
     },
 
@@ -467,7 +465,7 @@ const DB = {
             if (assignee && assignee.email) {
                 this.sendEmail(assignee.email, assignee.name,
                     'New Lead Assigned',
-                    `A new lead has been assigned to you:<br><br><strong>Client:</strong> ${data.clientName}<br><strong>Service:</strong> ${data.service}<br><strong>Charges:</strong> ₹${lead.charges.toLocaleString()}<br><strong>Payout:</strong> ₹${lead.payout.toLocaleString()}<br><br>Please check your dashboard for more details.`
+                    `A new lead has been assigned to you:<br><br><strong>Client:</strong> ${data.clientName}<br><strong>Service:</strong> ${data.service}<br><strong>Payout:</strong> ₹${lead.payout.toLocaleString()}<br><br>Please check your dashboard for more details.`
                 );
             }
         }
@@ -479,23 +477,15 @@ const DB = {
         const lead = this.getById(this.LEADS, leadId);
         if (!lead) return null;
 
+        // Employee can directly update lead status (no approval needed)
+        this.update(this.LEADS, leadId, { status });
+
         if (updatedBy && updatedBy !== 'USR001') {
-            const approvalId = this.nextId('approval');
+            // Employee updated — notify admin about the change
             const user = this.getById(this.USERS, updatedBy);
-            this.add(this.APPROVALS, {
-                id: approvalId,
-                type: 'lead_update',
-                requestedBy: updatedBy,
-                requestedByName: user ? user.name : 'Employee',
-                description: `Lead status update: ${lead.clientName} → ${status}`,
-                data: { leadId, oldStatus: lead.status, newStatus: status },
-                status: 'pending',
-                createdAt: new Date().toISOString()
-            });
-            this.addNotification('USR001', `${user?.name} requests to update lead "${lead.clientName}" to ${status}`, 'lead');
-            return { pending: true, message: 'Status update sent for admin approval' };
+            this.addNotification('USR001', `${user?.name} updated lead "${lead.clientName}" to ${status}`, 'lead');
         } else {
-            this.update(this.LEADS, leadId, { status });
+            // Admin updated — notify assigned employee
             if (lead.assignedTo) {
                 this.addNotification(lead.assignedTo, `Lead "${lead.clientName}" status updated to ${status}`, 'lead');
                 const assignee = this.getById(this.USERS, lead.assignedTo);
@@ -506,8 +496,8 @@ const DB = {
                     );
                 }
             }
-            return { pending: false, message: 'Status updated successfully' };
         }
+        return { pending: false, message: 'Status updated successfully' };
     },
 
     // Invoices
